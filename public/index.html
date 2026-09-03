@@ -26,6 +26,39 @@
           <input id="nameInput" maxlength="16" autocomplete="nickname" placeholder="输入昵称" />
         </label>
 
+        <div class="create-settings">
+          <div class="settings-title"><span>创建房间设置</span><small>仅房主选择</small></div>
+
+          <fieldset class="setting-group">
+            <legend>每方计时</legend>
+            <div class="segmented four">
+              <label><input type="radio" name="timeLimit" value="5" checked /><span>5 分钟</span></label>
+              <label><input type="radio" name="timeLimit" value="10" /><span>10 分钟</span></label>
+              <label><input type="radio" name="timeLimit" value="15" /><span>15 分钟</span></label>
+              <label><input type="radio" name="timeLimit" value="0" /><span>不限</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="setting-group">
+            <legend>棋盘大小</legend>
+            <div class="segmented four board-options">
+              <label><input type="radio" name="boardSize" value="15" checked /><span>15 × 15 · 标准</span></label>
+              <label><input type="radio" name="boardSize" value="19" /><span>19 × 19 · 大型</span></label>
+              <label><input type="radio" name="boardSize" value="21" /><span>21 × 21 · 超大型</span></label>
+              <label><input type="radio" name="boardSize" value="25" /><span>25 × 25 · 巨型</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="setting-group">
+            <legend>黑棋禁手</legend>
+            <div class="checks">
+              <label><input id="doubleThree" type="checkbox" checked /><span>三三禁手</span></label>
+              <label><input id="doubleFour" type="checkbox" checked /><span>四四禁手</span></label>
+              <label><input id="overline" type="checkbox" checked /><span>长连禁手</span></label>
+            </div>
+          </fieldset>
+        </div>
+
         <button id="createButton" class="primary-button">创建新对局 <span>↗</span></button>
 
         <div class="divider"><span>或者加入好友</span></div>
@@ -50,6 +83,8 @@
           <div id="connectionStatus" class="connection"><i></i>已连接</div>
         </header>
 
+        <div id="settingChips" class="setting-chips" aria-label="本局设置"></div>
+
         <div class="game-layout">
           <aside class="players panel">
             <p class="section-label">PLAYERS</p>
@@ -64,21 +99,31 @@
               <time id="whiteClock">05:00</time>
             </article>
             <div class="rule"></div>
-            <div class="game-note"><span>规则</span><p>率先将五枚同色棋子连成一线即可获胜。</p></div>
+            <div class="game-note"><span>规则</span><p id="ruleText">率先将五枚同色棋子连成一线即可获胜。</p></div>
           </aside>
 
           <section class="board-section">
-            <div class="status-line">
-              <div id="turnStone" class="mini-stone black"></div>
-              <p id="statusText">等待好友加入</p>
+            <div class="board-toolbar">
+              <div class="status-line">
+                <div id="turnStone" class="mini-stone black"></div>
+                <p id="statusText">等待好友加入</p>
+              </div>
+              <div class="zoom-control" aria-label="棋盘缩放">
+                <button id="zoomOutButton" type="button" aria-label="缩小棋盘">−</button>
+                <input id="zoomSlider" type="range" min="60" max="200" step="10" value="100" aria-label="棋盘缩放比例" />
+                <output id="zoomValue" for="zoomSlider">100%</output>
+                <button id="zoomInButton" type="button" aria-label="放大棋盘">＋</button>
+              </div>
             </div>
-            <div id="boardWrap" class="board-wrap waiting">
-              <canvas id="board" aria-label="15乘15五子棋棋盘"></canvas>
-              <div id="waitingOverlay" class="waiting-overlay">
-                <div class="pulse"></div>
-                <strong>等待另一位棋手</strong>
-                <p>把房间链接发给朋友，即可开始</p>
-                <button id="overlayCopyButton">复制邀请链接</button>
+            <div id="boardViewport" class="board-viewport">
+              <div id="boardWrap" class="board-wrap waiting">
+                <canvas id="board" aria-label="15乘15五子棋棋盘"></canvas>
+                <div id="waitingOverlay" class="waiting-overlay">
+                  <div class="pulse"></div>
+                  <strong>等待另一位棋手</strong>
+                  <p>把房间链接发给朋友，即可开始</p>
+                  <button id="overlayCopyButton">复制邀请链接</button>
+                </div>
               </div>
             </div>
             <p id="gameError" class="error game-error" role="alert"></p>

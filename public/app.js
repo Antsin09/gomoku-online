@@ -2,12 +2,12 @@ const socket = io();
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#board");
 const ctx = canvas.getContext("2d");
-const SIZE = 15;
 
 let state = null;
 let moveCount = 0;
 let lastWinner = 0;
 let toastTimer;
+let boardZoom = Math.min(200, Math.max(60, Number(localStorage.getItem("gomoku-board-zoom")) || 100));
 
 function makePlayerId() {
   let id = localStorage.getItem("gomoku-player-id");
@@ -46,14 +46,26 @@ function enterRoom(code) {
   $("#roomCode").textContent = code;
   $("#lobby").classList.add("hidden");
   $("#game").classList.remove("hidden");
-  requestAnimationFrame(resizeCanvas);
+  requestAnimationFrame(applyBoardZoom);
+}
+
+function selectedSettings() {
+  return {
+    timeMinutes: Number(document.querySelector('input[name="timeLimit"]:checked').value),
+    boardSize: Number(document.querySelector('input[name="boardSize"]:checked').value),
+    forbidden: {
+      doubleThree: $("#doubleThree").checked,
+      doubleFour: $("#doubleFour").checked,
+      overline: $("#overline").checked
+    }
+  };
 }
 
 $("#createButton").addEventListener("click", () => {
   const name = nameValue();
   if (!name) return;
   setLobbyBusy(true);
-  socket.emit("create_room", { playerId, name }, (result) => {
+  socket.emit("create_room", { playerId, name, settings: selectedSettings() }, (result) => {
     setLobbyBusy(false);
     if (result.ok) enterRoom(result.code);
     else $("#lobbyError").textContent = result.message;
@@ -122,6 +134,8 @@ function render() {
   $("#moveNumber").textContent = moveCount;
   $("#blackClock").textContent = formatTime(state.clocks[1]);
   $("#whiteClock").textContent = formatTime(state.clocks[2]);
+  canvas.setAttribute("aria-label", `${state.settings.boardSize}乘${state.settings.boardSize}五子棋棋盘`);
+  renderSettings();
   renderPlayer(1, $("#blackPlayer"));
   renderPlayer(2, $("#whitePlayer"));
 
@@ -143,6 +157,33 @@ function render() {
   drawBoard();
 }
 
+function forbiddenLabels() {
+  const rules = state.settings.forbidden;
+  const labels = [];
+  if (rules.doubleThree) labels.push("三三");
+  if (rules.doubleFour) labels.push("四四");
+  if (rules.overline) labels.push("长连");
+  return labels;
+}
+
+function renderSettings() {
+  const timeLabel = state.settings.timeMinutes === 0 ? "不限时" : `每方 ${state.settings.timeMinutes} 分钟`;
+  const forbidden = forbiddenLabels();
+  $("#settingChips").innerHTML = [
+    boardSizeLabel(state.settings.boardSize),
+    timeLabel,
+    forbidden.length ? `黑棋禁手：${forbidden.join("、")}` : "自由规则"
+  ].map((label) => `<span>${label}</span>`).join("");
+  $("#ruleText").textContent = forbidden.length
+    ? `黑棋启用${forbidden.join("、")}禁手；白棋无禁手。率先连成五子获胜。`
+    : "双方均无禁手，率先连成五子或更多即可获胜。";
+}
+
+function boardSizeLabel(size) {
+  const names = { 15: "标准", 19: "大型", 21: "超大型", 25: "巨型" };
+  return `${size} × ${size} · ${names[size] || "自定义"}`;
+}
+
 function renderPlayer(color, element) {
   const player = state.players[color - 1];
   element.querySelector("strong").textContent = player?.name || "等待加入…";
@@ -151,6 +192,7 @@ function renderPlayer(color, element) {
 }
 
 function formatTime(milliseconds) {
+  if (milliseconds === null) return "不限";
   const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -163,16 +205,51 @@ function resizeCanvas() {
   drawBoard();
 }
 
+function applyBoardZoom() {
+  const viewport = $("#boardViewport");
+  const boardWrap = $("#boardWrap");
+  if (!viewport.clientWidth) return;
+
+  const oldWidth = Math.max(viewport.scrollWidth, 1);
+  const oldHeight = Math.max(viewport.scrollHeight, 1);
+  const centerX = (viewport.scrollLeft + viewport.clientWidth / 2) / oldWidth;
+  const centerY = (viewport.scrollTop + viewport.clientHeight / 2) / oldHeight;
+  const boardPixels = Math.round(viewport.clientWidth * boardZoom / 100);
+  boardWrap.style.width = `${boardPixels}px`;
+  const verticalMargin = Math.max(0, Math.round((viewport.clientWidth - boardPixels) / 2));
+  boardWrap.style.marginTop = `${verticalMargin}px`;
+  boardWrap.style.marginBottom = `${verticalMargin}px`;
+  $("#zoomSlider").value = String(boardZoom);
+  $("#zoomValue").textContent = `${boardZoom}%`;
+
+  requestAnimationFrame(() => {
+    resizeCanvas();
+    viewport.scrollLeft = Math.max(0, centerX * viewport.scrollWidth - viewport.clientWidth / 2);
+    viewport.scrollTop = Math.max(0, centerY * viewport.scrollHeight - viewport.clientHeight / 2);
+  });
+}
+
+function setBoardZoom(value) {
+  boardZoom = Math.min(200, Math.max(60, Math.round(Number(value) / 10) * 10));
+  localStorage.setItem("gomoku-board-zoom", String(boardZoom));
+  applyBoardZoom();
+}
+
+$("#zoomSlider").addEventListener("input", (event) => setBoardZoom(event.target.value));
+$("#zoomOutButton").addEventListener("click", () => setBoardZoom(boardZoom - 10));
+$("#zoomInButton").addEventListener("click", () => setBoardZoom(boardZoom + 10));
+
 function drawBoard(animateLast = false) {
   if (!state || !canvas.width) return;
+  const size = state.board.length;
   const width = canvas.width;
   const padding = width * 0.045;
-  const gap = (width - padding * 2) / (SIZE - 1);
+  const gap = (width - padding * 2) / (size - 1);
   ctx.clearRect(0, 0, width, width);
   ctx.strokeStyle = "rgba(47, 36, 24, .7)";
   ctx.lineWidth = Math.max(1, width / 700);
 
-  for (let index = 0; index < SIZE; index += 1) {
+  for (let index = 0; index < size; index += 1) {
     const point = padding + gap * index;
     ctx.beginPath();
     ctx.moveTo(padding, point);
@@ -185,15 +262,15 @@ function drawBoard(animateLast = false) {
   }
 
   ctx.fillStyle = "rgba(47, 36, 24, .75)";
-  for (const [row, col] of [[3,3], [3,11], [7,7], [11,3], [11,11]]) {
+  for (const [row, col] of starPoints(size)) {
     ctx.beginPath();
     ctx.arc(padding + col * gap, padding + row * gap, gap * .08, 0, Math.PI * 2);
     ctx.fill();
   }
 
   const winning = new Set(state.winningLine.map(({ row, col }) => `${row}-${col}`));
-  for (let row = 0; row < SIZE; row += 1) {
-    for (let col = 0; col < SIZE; col += 1) {
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
       const color = state.board[row][col];
       if (!color) continue;
       const isLast = state.lastMove?.row === row && state.lastMove?.col === col;
@@ -208,6 +285,18 @@ function drawBoard(animateLast = false) {
       );
     }
   }
+}
+
+function starPoints(size) {
+  if (size >= 19) {
+    const center = (size - 1) / 2;
+    const points = [3, center, size - 4];
+    return points.flatMap((row) => points.map((col) => [row, col]));
+  }
+  const edge = 3;
+  const far = size - 4;
+  const center = (size - 1) / 2;
+  return [[edge, edge], [edge, far], [center, center], [far, edge], [far, far]];
 }
 
 function drawStone(x, y, radius, color, isWinner, isLast, animate) {
@@ -247,14 +336,15 @@ function drawStone(x, y, radius, color, isWinner, isLast, animate) {
 
 canvas.addEventListener("pointerup", (event) => {
   if (!state?.ready || state.winner || state.turn !== state.myColor) return;
+  const size = state.board.length;
   const rect = canvas.getBoundingClientRect();
   const visualX = (event.clientX - rect.left) * (canvas.width / rect.width);
   const visualY = (event.clientY - rect.top) * (canvas.height / rect.height);
   const padding = canvas.width * .045;
-  const gap = (canvas.width - padding * 2) / (SIZE - 1);
+  const gap = (canvas.width - padding * 2) / (size - 1);
   const col = Math.round((visualX - padding) / gap);
   const row = Math.round((visualY - padding) / gap);
-  if (row < 0 || row >= SIZE || col < 0 || col >= SIZE) return;
+  if (row < 0 || row >= size || col < 0 || col >= size) return;
   socket.emit("move", { row, col }, (result) => {
     if (!result.ok) showGameError(result.message);
   });
@@ -320,4 +410,4 @@ function toast(message) {
   toastTimer = setTimeout(() => element.classList.remove("show"), 1800);
 }
 
-window.addEventListener("resize", resizeCanvas);
+window.addEventListener("resize", applyBoardZoom);

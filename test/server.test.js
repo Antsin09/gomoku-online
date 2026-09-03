@@ -42,7 +42,15 @@ test("two clients can join a room and receive an authoritative move", async (t) 
     new Promise((resolve) => second.once("connect", resolve))
   ]);
 
-  const created = await emitWithReply(first, "create_room", { playerId: "one", name: "Alice" });
+  const created = await emitWithReply(first, "create_room", {
+    playerId: "one",
+    name: "Alice",
+    settings: {
+      boardSize: 21,
+      timeMinutes: 0,
+      forbidden: { doubleThree: false, doubleFour: true, overline: true }
+    }
+  });
   assert.equal(created.ok, true);
   const firstReadyState = nextState(first, (state) => state.ready);
   const secondReadyState = nextState(second, (state) => state.ready);
@@ -55,6 +63,9 @@ test("two clients can join a room and receive an authoritative move", async (t) 
   const [stateOne, stateTwo] = await Promise.all([firstReadyState, secondReadyState]);
   assert.equal(stateOne.myColor, 1);
   assert.equal(stateTwo.myColor, 2);
+  assert.equal(stateOne.board.length, 21);
+  assert.equal(stateOne.clocks[1], null);
+  assert.equal(stateTwo.settings.forbidden.doubleThree, false);
 
   const movedState = nextState(second, (state) => state.board[7][7] === 1);
   const moved = await emitWithReply(first, "move", { row: 7, col: 7 });

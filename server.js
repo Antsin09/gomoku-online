@@ -2,7 +2,7 @@ const path = require("path");
 const http = require("http");
 const express = require("express");
 const { Server } = require("socket.io");
-const { INITIAL_TIME, createGame, applyMove } = require("./game");
+const { createGame, applyMove } = require("./game");
 
 const app = express();
 const server = http.createServer(app);
@@ -32,7 +32,7 @@ function connectedPlayers(room) {
 
 function updateClock(room, now = Date.now()) {
   const game = room.game;
-  if (game.winner || !game.turnStartedAt || connectedPlayers(room).length < 2) return;
+  if (game.clocks[game.turn] === null || game.winner || !game.turnStartedAt || connectedPlayers(room).length < 2) return;
   const elapsed = now - game.turnStartedAt;
   game.clocks[game.turn] = Math.max(0, game.clocks[game.turn] - elapsed);
   game.turnStartedAt = now;
@@ -53,6 +53,7 @@ function publicState(room, playerId) {
     winningLine: room.game.winningLine,
     lastMove: room.game.lastMove,
     clocks: room.game.clocks,
+    settings: room.game.settings,
     players: [1, 2].map((color) => {
       const player = room.players.find((item) => item.color === color);
       return player ? { name: player.name, color, connected: player.connected } : null;
@@ -92,7 +93,7 @@ function attachPlayer(socket, room, { playerId, name }) {
   socket.data.roomCode = room.code;
   socket.data.playerId = playerId;
   if (connectedPlayers(room).length === 2 && !room.game.turnStartedAt && !room.game.winner) {
-    room.game.turnStartedAt = Date.now();
+    room.game.turnStartedAt = room.game.clocks[room.game.turn] === null ? null : Date.now();
   }
   return player;
 }
@@ -102,7 +103,7 @@ io.on("connection", (socket) => {
     const playerId = String(payload.playerId || "").slice(0, 64);
     if (!playerId) return reply({ ok: false, message: "无法识别玩家，请刷新后重试" });
     const code = makeRoomCode();
-    const room = { code, players: [], game: createGame(), createdAt: Date.now() };
+    const room = { code, players: [], game: createGame(payload.settings), createdAt: Date.now() };
     rooms.set(code, room);
     attachPlayer(socket, room, { playerId, name: payload.name });
     reply({ ok: true, code });
@@ -141,8 +142,8 @@ io.on("connection", (socket) => {
     if (!room || !player) return reply({ ok: false });
     room.game.rematchVotes.add(player.id);
     if (room.game.rematchVotes.size === 2) {
-      room.game = createGame();
-      room.game.turnStartedAt = connectedPlayers(room).length === 2 ? Date.now() : null;
+      room.game = createGame(room.game.settings);
+      room.game.turnStartedAt = connectedPlayers(room).length === 2 && room.game.clocks[room.game.turn] !== null ? Date.now() : null;
     }
     reply({ ok: true });
     emitState(room);
@@ -165,7 +166,7 @@ io.on("connection", (socket) => {
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms) {
-    if (connectedPlayers(room).length === 2 && !room.game.winner) {
+    if (connectedPlayers(room).length === 2 && !room.game.winner && room.game.clocks[room.game.turn] !== null) {
       updateClock(room, now);
       emitState(room);
     }
