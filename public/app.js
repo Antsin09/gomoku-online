@@ -8,6 +8,16 @@ let moveCount = 0;
 let lastWinner = 0;
 let toastTimer;
 let boardZoom = Math.min(200, Math.max(60, Number(localStorage.getItem("gomoku-board-zoom")) || 100));
+let pendingMove = null;
+let zoomFrame = null;
+
+const boardGesture = {
+  pointers: new Map(),
+  start: null,
+  pinch: null,
+  dragging: false,
+  wasMultiTouch: false
+};
 
 function makePlayerId() {
   let id = localStorage.getItem("gomoku-player-id");
@@ -99,6 +109,12 @@ function countMoves(board) {
 
 socket.on("state", (nextState) => {
   const previousMoves = moveCount;
+  if (
+    pendingMove &&
+    (nextState.winner || !nextState.ready || nextState.turn !== nextState.myColor || nextState.board[pendingMove.row]?.[pendingMove.col] !== 0)
+  ) {
+    pendingMove = null;
+  }
   state = nextState;
   moveCount = countMoves(state.board);
   render();
@@ -150,6 +166,7 @@ function render() {
   else if (state.winner === 3) status.textContent = "本局平局";
   else if (state.winner) status.textContent = `${state.winner === 1 ? "黑棋" : "白棋"}获胜`;
   else status.textContent = state.turn === state.myColor ? "轮到你了" : "等待对方落子";
+  if (pendingMove && state.turn === state.myColor && !state.winner) status.textContent = "再次点击该位置确认落子";
 
   const finished = Boolean(state.winner);
   $("#rematchButton").disabled = !finished;
@@ -205,15 +222,17 @@ function resizeCanvas() {
   drawBoard();
 }
 
-function applyBoardZoom() {
+function applyBoardZoom(anchor = null) {
   const viewport = $("#boardViewport");
   const boardWrap = $("#boardWrap");
   if (!viewport.clientWidth) return;
 
   const oldWidth = Math.max(viewport.scrollWidth, 1);
   const oldHeight = Math.max(viewport.scrollHeight, 1);
-  const centerX = (viewport.scrollLeft + viewport.clientWidth / 2) / oldWidth;
-  const centerY = (viewport.scrollTop + viewport.clientHeight / 2) / oldHeight;
+  const focusX = anchor?.viewportX ?? viewport.clientWidth / 2;
+  const focusY = anchor?.viewportY ?? viewport.clientHeight / 2;
+  const contentX = anchor?.contentX ?? (viewport.scrollLeft + focusX) / oldWidth;
+  const contentY = anchor?.contentY ?? (viewport.scrollTop + focusY) / oldHeight;
   const boardPixels = Math.round(viewport.clientWidth * boardZoom / 100);
   boardWrap.style.width = `${boardPixels}px`;
   const verticalMargin = Math.max(0, Math.round((viewport.clientWidth - boardPixels) / 2));
@@ -222,17 +241,19 @@ function applyBoardZoom() {
   $("#zoomSlider").value = String(boardZoom);
   $("#zoomValue").textContent = `${boardZoom}%`;
 
-  requestAnimationFrame(() => {
+  cancelAnimationFrame(zoomFrame);
+  zoomFrame = requestAnimationFrame(() => {
     resizeCanvas();
-    viewport.scrollLeft = Math.max(0, centerX * viewport.scrollWidth - viewport.clientWidth / 2);
-    viewport.scrollTop = Math.max(0, centerY * viewport.scrollHeight - viewport.clientHeight / 2);
+    viewport.scrollLeft = Math.max(0, contentX * viewport.scrollWidth - focusX);
+    viewport.scrollTop = Math.max(0, contentY * viewport.scrollHeight - focusY);
   });
 }
 
-function setBoardZoom(value) {
-  boardZoom = Math.min(200, Math.max(60, Math.round(Number(value) / 10) * 10));
-  localStorage.setItem("gomoku-board-zoom", String(boardZoom));
-  applyBoardZoom();
+function setBoardZoom(value, { anchor = null, persist = true, snap = true } = {}) {
+  const numeric = Number(value);
+  boardZoom = Math.min(200, Math.max(60, snap ? Math.round(numeric / 10) * 10 : Math.round(numeric)));
+  if (persist) localStorage.setItem("gomoku-board-zoom", String(boardZoom));
+  applyBoardZoom(anchor);
 }
 
 $("#zoomSlider").addEventListener("input", (event) => setBoardZoom(event.target.value));
@@ -285,6 +306,15 @@ function drawBoard(animateLast = false) {
       );
     }
   }
+
+  if (pendingMove && state.turn === state.myColor && state.board[pendingMove.row]?.[pendingMove.col] === 0) {
+    drawPendingStone(
+      padding + pendingMove.col * gap,
+      padding + pendingMove.row * gap,
+      gap * .41,
+      state.myColor
+    );
+  }
 }
 
 function starPoints(size) {
@@ -334,10 +364,25 @@ function drawStone(x, y, radius, color, isWinner, isLast, animate) {
   ctx.restore();
 }
 
-canvas.addEventListener("pointerup", (event) => {
+function drawPendingStone(x, y, radius, color) {
+  ctx.save();
+  ctx.globalAlpha = .48;
+  drawStone(x, y, radius, color, false, false, false);
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([radius * .3, radius * .22]);
+  ctx.strokeStyle = color === 1 ? "rgba(255,255,255,.9)" : "rgba(49,95,70,.9)";
+  ctx.lineWidth = Math.max(2, radius * .11);
+  ctx.beginPath();
+  ctx.arc(x, y, radius * .68, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function handleBoardTap(event) {
   if (!state?.ready || state.winner || state.turn !== state.myColor) return;
   const size = state.board.length;
   const rect = canvas.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
   const visualX = (event.clientX - rect.left) * (canvas.width / rect.width);
   const visualY = (event.clientY - rect.top) * (canvas.height / rect.height);
   const padding = canvas.width * .045;
@@ -345,10 +390,143 @@ canvas.addEventListener("pointerup", (event) => {
   const col = Math.round((visualX - padding) / gap);
   const row = Math.round((visualY - padding) / gap);
   if (row < 0 || row >= size || col < 0 || col >= size) return;
+  if (state.board[row][col] !== 0) {
+    showGameError("这个位置已经有棋子了");
+    return;
+  }
+  if (!pendingMove || pendingMove.row !== row || pendingMove.col !== col) {
+    pendingMove = { row, col };
+    $("#statusText").textContent = "再次点击该位置确认落子";
+    drawBoard();
+    return;
+  }
+
+  pendingMove = null;
+  $("#statusText").textContent = "正在确认落子…";
+  drawBoard();
   socket.emit("move", { row, col }, (result) => {
-    if (!result.ok) showGameError(result.message);
+    if (!result.ok) {
+      showGameError(result.message);
+      render();
+    }
   });
+}
+
+function relativePoint(viewport, first, second) {
+  const rect = viewport.getBoundingClientRect();
+  return {
+    x: (first.x + second.x) / 2 - rect.left,
+    y: (first.y + second.y) / 2 - rect.top
+  };
+}
+
+function startPinch(viewport) {
+  const [first, second] = [...boardGesture.pointers.values()].slice(0, 2);
+  if (!first || !second) return;
+  const midpoint = relativePoint(viewport, first, second);
+  boardGesture.pinch = {
+    distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)),
+    zoom: boardZoom,
+    contentX: (viewport.scrollLeft + midpoint.x) / Math.max(1, viewport.scrollWidth),
+    contentY: (viewport.scrollTop + midpoint.y) / Math.max(1, viewport.scrollHeight)
+  };
+}
+
+const boardViewport = $("#boardViewport");
+
+boardViewport.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (event.target.closest?.("button, input")) return;
+  boardViewport.setPointerCapture?.(event.pointerId);
+  boardGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (boardGesture.pointers.size === 1) {
+    boardGesture.start = {
+      x: event.clientX,
+      y: event.clientY,
+      scrollLeft: boardViewport.scrollLeft,
+      scrollTop: boardViewport.scrollTop
+    };
+    boardGesture.dragging = false;
+    boardGesture.wasMultiTouch = false;
+  } else {
+    boardGesture.wasMultiTouch = true;
+    boardGesture.dragging = true;
+    boardViewport.classList.add("dragging");
+    startPinch(boardViewport);
+  }
 });
+
+boardViewport.addEventListener("pointermove", (event) => {
+  if (!boardGesture.pointers.has(event.pointerId)) return;
+  boardGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+  if (boardGesture.pointers.size >= 2) {
+    if (!boardGesture.pinch) startPinch(boardViewport);
+    const [first, second] = [...boardGesture.pointers.values()].slice(0, 2);
+    const midpoint = relativePoint(boardViewport, first, second);
+    const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y));
+    const nextZoom = boardGesture.pinch.zoom * distance / boardGesture.pinch.distance;
+    setBoardZoom(nextZoom, {
+      persist: false,
+      snap: false,
+      anchor: {
+        contentX: boardGesture.pinch.contentX,
+        contentY: boardGesture.pinch.contentY,
+        viewportX: midpoint.x,
+        viewportY: midpoint.y
+      }
+    });
+    return;
+  }
+
+  if (!boardGesture.start || boardGesture.wasMultiTouch) return;
+  const deltaX = event.clientX - boardGesture.start.x;
+  const deltaY = event.clientY - boardGesture.start.y;
+  if (!boardGesture.dragging && Math.hypot(deltaX, deltaY) > 7) {
+    boardGesture.dragging = true;
+    boardViewport.classList.add("dragging");
+  }
+  if (boardGesture.dragging) {
+    boardViewport.scrollLeft = boardGesture.start.scrollLeft - deltaX;
+    boardViewport.scrollTop = boardGesture.start.scrollTop - deltaY;
+  }
+});
+
+function finishBoardPointer(event) {
+  if (!boardGesture.pointers.has(event.pointerId)) return;
+  const shouldTap = event.type === "pointerup" && boardGesture.pointers.size === 1 && !boardGesture.dragging && !boardGesture.wasMultiTouch;
+  boardGesture.pointers.delete(event.pointerId);
+
+  if (shouldTap) handleBoardTap(event);
+  if (boardGesture.pointers.size === 0) {
+    localStorage.setItem("gomoku-board-zoom", String(boardZoom));
+    boardGesture.start = null;
+    boardGesture.pinch = null;
+    boardGesture.dragging = false;
+    boardGesture.wasMultiTouch = false;
+    boardViewport.classList.remove("dragging");
+  }
+}
+
+boardViewport.addEventListener("pointerup", finishBoardPointer);
+boardViewport.addEventListener("pointercancel", finishBoardPointer);
+
+boardViewport.addEventListener("wheel", (event) => {
+  if (!event.ctrlKey) return;
+  event.preventDefault();
+  const rect = boardViewport.getBoundingClientRect();
+  const viewportX = event.clientX - rect.left;
+  const viewportY = event.clientY - rect.top;
+  setBoardZoom(boardZoom - event.deltaY * .12, {
+    snap: false,
+    anchor: {
+      contentX: (boardViewport.scrollLeft + viewportX) / Math.max(1, boardViewport.scrollWidth),
+      contentY: (boardViewport.scrollTop + viewportY) / Math.max(1, boardViewport.scrollHeight),
+      viewportX,
+      viewportY
+    }
+  });
+}, { passive: false });
 
 function showGameError(message) {
   $("#gameError").textContent = message;

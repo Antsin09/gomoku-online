@@ -194,9 +194,10 @@ h1 span { display: block; margin-top: 12px; font-size: 18px; font-weight: 500; l
 .zoom-control button { width: 25px; height: 25px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; background: rgba(23,24,22,.07); font-size: 14px; line-height: 1; }
 .zoom-control input { width: 62px; accent-color: var(--accent); cursor: pointer; }
 .zoom-control output { min-width: 34px; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
-.board-viewport { width: 100%; max-width: 700px; aspect-ratio: 1; margin: 0 auto; overflow: auto; overscroll-behavior: contain; border-radius: 26px; scrollbar-width: thin; scrollbar-color: rgba(23,24,22,.25) transparent; }
+.board-viewport { width: 100%; max-width: 700px; aspect-ratio: 1; margin: 0 auto; overflow: auto; overscroll-behavior: contain; touch-action: none; cursor: grab; border-radius: 26px; scrollbar-width: thin; scrollbar-color: rgba(23,24,22,.25) transparent; }
+.board-viewport.dragging, .board-viewport.dragging #board { cursor: grabbing; user-select: none; }
 .board-wrap { position: relative; width: 100%; max-width: none; aspect-ratio: 1; margin: 0 auto; padding: 4%; border-radius: 26px; background: linear-gradient(145deg, #dec392, #cbaa75); box-shadow: 0 24px 70px rgba(86,65,34,.22), inset 0 1px rgba(255,255,255,.35); }
-#board { display: block; width: 100%; height: 100%; cursor: pointer; touch-action: manipulation; }
+#board { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 .board-wrap.waiting #board { filter: blur(2px); opacity: .35; }
 .waiting-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .waiting-overlay .pulse { width: 13px; height: 13px; margin-bottom: 22px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 rgba(49,95,70,.4); animation: pulse 1.8s infinite; }
