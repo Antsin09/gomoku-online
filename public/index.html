@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f2ed" />
+    <meta name="description" content="和朋友在线下一局简洁、纯粹的五子棋。" />
+    <title>GOMOKU · 在线五子棋</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="noise"></div>
+
+    <main>
+      <section id="lobby" class="lobby panel">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <p class="eyebrow">ONLINE BOARD GAME</p>
+        <h1>GOMOKU<span>五子棋</span></h1>
+        <p class="intro">留一点时间，和朋友认真下一局。</p>
+
+        <label class="field">
+          <span>你的昵称</span>
+          <input id="nameInput" maxlength="16" autocomplete="nickname" placeholder="输入昵称" />
+        </label>
+
+        <button id="createButton" class="primary-button">创建新对局 <span>↗</span></button>
+
+        <div class="divider"><span>或者加入好友</span></div>
+
+        <form id="joinForm" class="join-form">
+          <label class="field compact">
+            <span>房间号</span>
+            <input id="roomInput" maxlength="6" autocomplete="off" placeholder="例如 A7K9PX" />
+          </label>
+          <button class="secondary-button" type="submit">加入</button>
+        </form>
+        <p id="lobbyError" class="error" role="alert"></p>
+      </section>
+
+      <section id="game" class="game-view hidden" aria-live="polite">
+        <header class="game-header">
+          <button id="exitButton" class="icon-button" aria-label="退出房间">←</button>
+          <div class="room-heading">
+            <p>PRIVATE ROOM</p>
+            <button id="copyButton" title="复制邀请链接"><span id="roomCode">——</span> <small>复制邀请链接</small></button>
+          </div>
+          <div id="connectionStatus" class="connection"><i></i>已连接</div>
+        </header>
+
+        <div class="game-layout">
+          <aside class="players panel">
+            <p class="section-label">PLAYERS</p>
+            <article id="blackPlayer" class="player-card">
+              <div class="stone black"></div>
+              <div class="player-copy"><span>黑棋</span><strong>等待加入…</strong></div>
+              <time id="blackClock">05:00</time>
+            </article>
+            <article id="whitePlayer" class="player-card">
+              <div class="stone white"></div>
+              <div class="player-copy"><span>白棋</span><strong>等待加入…</strong></div>
+              <time id="whiteClock">05:00</time>
+            </article>
+            <div class="rule"></div>
+            <div class="game-note"><span>规则</span><p>率先将五枚同色棋子连成一线即可获胜。</p></div>
+          </aside>
+
+          <section class="board-section">
+            <div class="status-line">
+              <div id="turnStone" class="mini-stone black"></div>
+              <p id="statusText">等待好友加入</p>
+            </div>
+            <div id="boardWrap" class="board-wrap waiting">
+              <canvas id="board" aria-label="15乘15五子棋棋盘"></canvas>
+              <div id="waitingOverlay" class="waiting-overlay">
+                <div class="pulse"></div>
+                <strong>等待另一位棋手</strong>
+                <p>把房间链接发给朋友，即可开始</p>
+                <button id="overlayCopyButton">复制邀请链接</button>
+              </div>
+            </div>
+            <p id="gameError" class="error game-error" role="alert"></p>
+          </section>
+
+          <aside class="actions panel">
+            <p class="section-label">MATCH</p>
+            <div class="match-stat"><span>你执</span><strong id="myColor">—</strong></div>
+            <div class="match-stat"><span>回合</span><strong id="moveNumber">0</strong></div>
+            <div class="rule"></div>
+            <button id="rematchButton" class="action-button" disabled>再来一局</button>
+            <button id="shareButton" class="action-button subtle">邀请好友</button>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <div id="resultModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+      <div class="modal-card panel">
+        <div id="resultStone" class="result-stone black"></div>
+        <p class="eyebrow">GAME FINISHED</p>
+        <h2 id="resultTitle">黑棋获胜</h2>
+        <p id="resultSubtitle">漂亮的一局。</p>
+        <button id="modalRematchButton" class="primary-button">再来一局</button>
+        <button id="closeModalButton" class="text-button">查看棋盘</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

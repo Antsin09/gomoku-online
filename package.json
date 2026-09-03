@@ -1,0 +1,20 @@
+{
+  "name": "nexus-gomoku",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A polished real-time online Gomoku game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
+  }
+}
