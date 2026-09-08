@@ -80,56 +80,177 @@ function findWinningLine(board, row, col, color) {
   return [];
 }
 
-function directionalString(board, row, col, rowStep, colStep) {
-  let text = "";
-  for (let offset = -5; offset <= 5; offset += 1) {
-    const currentRow = row + offset * rowStep;
-    const currentCol = col + offset * colStep;
-    text += inBounds(board, currentRow) && inBounds(board, currentCol)
-      ? String(board[currentRow][currentCol])
-      : "2";
-  }
-  return text;
+function pointKey({ row, col }) {
+  return `${row},${col}`;
 }
 
-function patternIncludesMove(text, pattern, centerIndex = 5) {
-  for (let start = 0; start <= text.length - pattern.length; start += 1) {
-    if (text.slice(start, start + pattern.length) !== pattern) continue;
-    const position = centerIndex - start;
-    if (position >= 0 && position < pattern.length && pattern[position] === "1") return true;
+function lineThrough(board, row, col, rowStep, colStep) {
+  let firstRow = row;
+  let firstCol = col;
+  while (inBounds(board, firstRow - rowStep) && inBounds(board, firstCol - colStep)) {
+    firstRow -= rowStep;
+    firstCol -= colStep;
   }
-  return false;
+
+  const cells = [];
+  let originIndex = -1;
+  for (
+    let currentRow = firstRow, currentCol = firstCol;
+    inBounds(board, currentRow) && inBounds(board, currentCol);
+    currentRow += rowStep, currentCol += colStep
+  ) {
+    if (currentRow === row && currentCol === col) originIndex = cells.length;
+    cells.push({ row: currentRow, col: currentCol });
+  }
+  return { cells, originIndex, rowStep, colStep };
 }
 
-function createsOpenThree(text) {
-  return ["01110", "010110", "011010"].some((pattern) => patternIncludesMove(text, pattern));
+function runLengthInDirection(board, row, col, rowStep, colStep) {
+  return getLine(board, row, col, 1, rowStep, colStep).length;
 }
 
-function createsFour(text, centerIndex = 5) {
-  for (let start = 0; start <= text.length - 5; start += 1) {
-    const window = text.slice(start, start + 5);
-    const centerPosition = centerIndex - start;
-    if (centerPosition < 0 || centerPosition >= 5 || window[centerPosition] !== "1") continue;
-    if (!window.includes("2") && window.split("1").length - 1 === 4) return true;
+function hasExactFive(board, row, col) {
+  return DIRECTIONS.some(
+    ([rowStep, colStep]) => runLengthInDirection(board, row, col, rowStep, colStep) === 5
+  );
+}
+
+function hasOverline(board, row, col) {
+  return DIRECTIONS.some(
+    ([rowStep, colStep]) => runLengthInDirection(board, row, col, rowStep, colStep) >= 6
+  );
+}
+
+function completesFiveInDirection(board, point, rowStep, colStep, rules) {
+  board[point.row][point.col] = 1;
+  const length = runLengthInDirection(board, point.row, point.col, rowStep, colStep);
+  board[point.row][point.col] = 0;
+  return rules.overline ? length === 5 : length >= 5;
+}
+
+// A Four is a distinct set of four black stones, including the new move, that
+// has at least one legal completion to five. The two ends of one straight Four
+// are deliberately deduplicated, while two different Fours on the same line
+// are still counted separately.
+function findFourStructures(board, row, col, rules) {
+  const structures = new Map();
+  for (let directionIndex = 0; directionIndex < DIRECTIONS.length; directionIndex += 1) {
+    const [rowStep, colStep] = DIRECTIONS[directionIndex];
+    const { cells, originIndex } = lineThrough(board, row, col, rowStep, colStep);
+    const firstStart = Math.max(0, originIndex - 4);
+    const lastStart = Math.min(originIndex, cells.length - 5);
+
+    for (let start = firstStart; start <= lastStart; start += 1) {
+      const window = cells.slice(start, start + 5);
+      const black = window.filter((point) => board[point.row][point.col] === 1);
+      const empty = window.filter((point) => board[point.row][point.col] === 0);
+      if (black.length !== 4 || empty.length !== 1) continue;
+      if (!black.some((point) => point.row === row && point.col === col)) continue;
+      if (!completesFiveInDirection(board, empty[0], rowStep, colStep, rules)) continue;
+
+      const stones = black.map(pointKey).sort();
+      const key = `${directionIndex}:${stones.join("|")}`;
+      if (!structures.has(key)) structures.set(key, { directionIndex, stones, completions: new Set() });
+      structures.get(key).completions.add(pointKey(empty[0]));
+    }
   }
-  return false;
+  return [...structures.values()];
+}
+
+function isLegalWinningEnd(board, point, rowStep, colStep, rules) {
+  if (board[point.row][point.col] !== 0) return false;
+  return completesFiveInDirection(board, point, rowStep, colStep, rules);
+}
+
+function findStraightFours(board, row, col, requiredPoint, rules) {
+  const structures = new Map();
+  for (let directionIndex = 0; directionIndex < DIRECTIONS.length; directionIndex += 1) {
+    const [rowStep, colStep] = DIRECTIONS[directionIndex];
+    const { cells, originIndex } = lineThrough(board, row, col, rowStep, colStep);
+    const requiredIndex = cells.findIndex(
+      (point) => point.row === requiredPoint.row && point.col === requiredPoint.col
+    );
+    if (requiredIndex < 0) continue;
+
+    const firstStart = Math.max(0, originIndex - 3, requiredIndex - 3);
+    const lastStart = Math.min(originIndex, requiredIndex, cells.length - 4);
+    for (let start = firstStart; start <= lastStart; start += 1) {
+      const stones = cells.slice(start, start + 4);
+      if (!stones.every((point) => board[point.row][point.col] === 1)) continue;
+      const before = cells[start - 1];
+      const after = cells[start + 4];
+      if (!before || !after || board[before.row][before.col] !== 0 || board[after.row][after.col] !== 0) continue;
+      if (!isLegalWinningEnd(board, before, rowStep, colStep, rules)) continue;
+      if (!isLegalWinningEnd(board, after, rowStep, colStep, rules)) continue;
+
+      const stoneKeys = stones.map(pointKey).sort();
+      const key = `${directionIndex}:${stoneKeys.join("|")}`;
+      structures.set(key, { directionIndex, stones: stoneKeys });
+    }
+  }
+  return [...structures.values()];
+}
+
+function isValidThreeExtension(board, row, col, rules) {
+  if (rules.overline && hasOverline(board, row, col)) return false;
+  if (rules.doubleFour && findFourStructures(board, row, col, rules).length >= 2) return false;
+  return true;
+}
+
+// Under the RIF definition a Three must have a continuation to a straight
+// Four. We simulate every possible continuation instead of matching a list of
+// text patterns. This rejects edge-bound threes and "pseudo-threes" whose only
+// continuation would itself be an overline or a double-Four.
+function findThreeStructures(board, row, col, rules) {
+  const structures = new Map();
+  for (let directionIndex = 0; directionIndex < DIRECTIONS.length; directionIndex += 1) {
+    const [rowStep, colStep] = DIRECTIONS[directionIndex];
+    const { cells, originIndex } = lineThrough(board, row, col, rowStep, colStep);
+    const firstCandidate = Math.max(0, originIndex - 4);
+    const lastCandidate = Math.min(cells.length - 1, originIndex + 4);
+
+    for (let candidateIndex = firstCandidate; candidateIndex <= lastCandidate; candidateIndex += 1) {
+      const candidate = cells[candidateIndex];
+      if (board[candidate.row][candidate.col] !== 0) continue;
+      board[candidate.row][candidate.col] = 1;
+      const straightFours = findStraightFours(board, row, col, candidate, rules)
+        .filter((structure) => structure.directionIndex === directionIndex);
+      const extensionIsValid = straightFours.length > 0 && isValidThreeExtension(
+        board,
+        candidate.row,
+        candidate.col,
+        rules
+      );
+
+      if (extensionIsValid) {
+        for (const straightFour of straightFours) {
+          const candidateKey = pointKey(candidate);
+          const threeStones = straightFour.stones.filter((key) => key !== candidateKey);
+          const key = `${directionIndex}:${threeStones.join("|")}`;
+          if (!structures.has(key)) {
+            structures.set(key, { directionIndex, stones: threeStones, extensions: new Set() });
+          }
+          structures.get(key).extensions.add(candidateKey);
+        }
+      }
+      board[candidate.row][candidate.col] = 0;
+    }
+  }
+  return [...structures.values()];
 }
 
 function forbiddenReason(board, row, col, rules) {
-  const lines = DIRECTIONS.map(([rowStep, colStep]) => ({
-    cells: getLine(board, row, col, 1, rowStep, colStep),
-    text: directionalString(board, row, col, rowStep, colStep)
-  }));
-
-  if (rules.overline && lines.some(({ cells }) => cells.length >= 6)) {
+  // In official Renju, an exact five made by the same move takes precedence
+  // over a simultaneously formed forbidden pattern. A run of six is not an
+  // exact five, so it continues to the overline check below.
+  if (hasExactFive(board, row, col)) return null;
+  if (rules.overline && hasOverline(board, row, col)) {
     return "长连禁手：黑棋不能形成六枚或更多连续棋子";
   }
-  // An exact five wins immediately unless the same move also makes a forbidden overline.
-  if (lines.some(({ cells }) => cells.length >= 5)) return null;
-  if (rules.doubleFour && lines.filter(({ text }) => createsFour(text)).length >= 2) {
+  if (rules.doubleFour && findFourStructures(board, row, col, rules).length >= 2) {
     return "四四禁手：黑棋不能一手同时形成两个四";
   }
-  if (rules.doubleThree && lines.filter(({ text }) => createsOpenThree(text)).length >= 2) {
+  if (rules.doubleThree && findThreeStructures(board, row, col, rules).length >= 2) {
     return "三三禁手：黑棋不能一手同时形成两个活三";
   }
   return null;

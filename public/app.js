@@ -192,7 +192,7 @@ function renderSettings() {
     forbidden.length ? `黑棋禁手：${forbidden.join("、")}` : "自由规则"
   ].map((label) => `<span>${label}</span>`).join("");
   $("#ruleText").textContent = forbidden.length
-    ? `黑棋启用${forbidden.join("、")}禁手；白棋无禁手。率先连成五子获胜。`
+    ? `黑棋启用${forbidden.join("、")}禁手；按正式连珠定义排除假三，恰好五连优先，白棋无禁手。`
     : "双方均无禁手，率先连成五子或更多即可获胜。";
 }
 

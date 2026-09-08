@@ -68,6 +68,42 @@ test("detects a black double-four", () => {
   assert.match(forbiddenReason(board, 7, 7, game.settings.forbidden), /四四禁手/);
 });
 
+test("detects two distinct fours formed on the same line", () => {
+  const game = createGame();
+  const { board } = game;
+  for (const col of [4, 6, 7, 8, 10]) board[7][col] = 1;
+  assert.match(forbiddenReason(board, 7, 7, game.settings.forbidden), /四四禁手/);
+});
+
+test("allows a four-three and does not count its pseudo-three as a real three", () => {
+  const game = createGame();
+  const { board } = game;
+  // Horizontally this move makes 0-111-0-1: one Four plus an apparent Three.
+  // Extending the apparent Three on the left would itself make a double-Four,
+  // so RIF rules classify it as a pseudo-three. Vertically there is one real
+  // Three. The whole move is therefore a legal four-three, not a double-three.
+  for (const [row, col] of [[7,5], [7,6], [7,9], [6,7], [8,7], [7,7]]) board[row][col] = 1;
+  assert.equal(forbiddenReason(board, 7, 7, game.settings.forbidden), null);
+});
+
+test("does not count a three trapped against the board edge", () => {
+  const game = createGame();
+  const { board } = game;
+  for (const [row, col] of [[1,6], [1,8], [0,7], [2,7], [1,7]]) board[row][col] = 1;
+  assert.equal(forbiddenReason(board, 1, 7, game.settings.forbidden), null);
+});
+
+test("an exact five takes priority over simultaneous forbidden patterns", () => {
+  const game = createGame();
+  const { board } = game;
+  for (const [row, col] of [
+    [7,5], [7,6], [7,8], [7,9],
+    [6,7], [8,7], [6,6], [8,8],
+    [7,7]
+  ]) board[row][col] = 1;
+  assert.equal(forbiddenReason(board, 7, 7, game.settings.forbidden), null);
+});
+
 test("rejects an enabled overline and rolls back the move", () => {
   const game = createGame();
   for (let col = 2; col <= 6; col += 1) game.board[7][col] = 1;
